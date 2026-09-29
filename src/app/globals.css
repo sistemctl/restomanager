@@ -1,0 +1,63 @@
+@import "tailwindcss";
+
+:root {
+  --primary: #e63946;
+  --primary-hover: #d62828;
+  --secondary: #457b9d;
+  --secondary-hover: #1d3557;
+  --accent: #f4a261;
+  --success: #2a9d8f;
+  --warning: #e76f51;
+  --background: #f8fafc;
+  --foreground: #1e293b;
+  --card: #ffffff;
+  --card-foreground: #0f172a;
+  --border: #e2e8f0;
+  --muted: #64748b;
+  --muted-bg: #f1f5f9;
+}
+
+body {
+  background-color: var(--background);
+  color: var(--foreground);
+  font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  min-height: 100vh;
+}
+
+@keyframes ticket-in {
+  from { opacity: 0; transform: translateY(8px) scale(0.985); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@keyframes bell-pop {
+  0%, 100% { transform: rotate(0deg) scale(1); }
+  30% { transform: rotate(-14deg) scale(1.15); }
+  65% { transform: rotate(12deg) scale(1.1); }
+}
+
+.thermal-ticket { width: 80mm; max-width: calc(100vw - 2rem); }
+
+@media print {
+  @page { size: letter; margin: 10mm; }
+  .thermal-ticket { width: 72mm; max-width: none; box-shadow: none; }
+  body * { visibility: hidden !important; }
+  #qr-print-area, #qr-print-area * { visibility: visible !important; }
+  #qr-print-area { position: absolute; left: 0; top: 0; width: 100%; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8mm; }
+  #qr-print-area article { border: 1px solid #cbd5e1; padding: 5mm; }
+}
+
+/* Custom scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}

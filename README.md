@@ -213,4 +213,3 @@ Este proyecto es privado y de uso interno.
 <p align="center">
   Hecho con ❤️ y ☕ — Inspirado en <a href="https://fu.do">Fudo POS</a>
 </p>
-

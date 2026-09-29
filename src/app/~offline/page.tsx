@@ -1,0 +1,2 @@
+import { WifiOff } from "lucide-react";
+export default function OfflinePage(){return <main className="min-h-screen bg-[#fffaf1] grid place-items-center p-6 text-center"><div><WifiOff className="w-16 h-16 mx-auto text-[#E63946]"/><h1 className="text-3xl font-black text-[#1D3557] mt-5">Sin conexión</h1><p className="text-slate-500 mt-2 max-w-sm">El carrito permanece guardado en este dispositivo. Reconéctate para enviar el pedido.</p></div></main>}

@@ -1,0 +1,592 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// -------------------------------------------------------------
+// ENUMS
+// -------------------------------------------------------------
+
+enum Rol {
+  ADMIN
+  CAJERO
+  MESERO
+  COCINERO
+  REPARTIDOR
+}
+
+enum EstadoMesa {
+  DISPONIBLE
+  OCUPADA
+  RESERVADA
+  SUCIA
+  MANTENIMIENTO
+}
+
+enum TipoPedido {
+  EN_MESA
+  MOSTRADOR
+  DELIVERY
+}
+
+enum EstadoPedido {
+  ABIERTO
+  PENDIENTE
+  EN_PREPARACION
+  LISTO
+  COMPLETADO
+  CANCELADO
+}
+
+enum EstadoPago {
+  SIN_PAGAR
+  PARCIAL
+  PAGADO
+  REEMBOLSADO
+}
+
+enum EstadoItem {
+  EN_COLA
+  PREPARANDO
+  LISTO
+  SERVIDO
+}
+
+enum MetodoPago {
+  EFECTIVO
+  TARJETA_CREDITO
+  TARJETA_DEBITO
+  TRANSFERENCIA
+  CUENTA_CORRIENTE
+}
+
+enum EstadoDelivery {
+  PENDIENTE
+  EN_PREPARACION
+  ENVIADO
+  ENTREGADO
+  CANCELADO
+}
+
+enum TipoMovimientoCaja {
+  INGRESO
+  EGRESO
+}
+
+enum EstadoTurno {
+  ABIERTO
+  CERRADO
+}
+
+enum TipoMovimientoInventario {
+  COMPRA
+  VENTA
+  MERMA
+  AJUSTE
+}
+
+enum TipoMovimientoCuenta {
+  CARGO
+  ABONO
+  AJUSTE
+}
+
+// -------------------------------------------------------------
+// 1. USUARIOS Y AUTENTICACIÓN
+// -------------------------------------------------------------
+
+model Usuario {
+  id           String   @id @default(cuid())
+  nombre       String
+  email        String?  @unique
+  passwordHash String?
+  pin          String?  @unique // PIN de 4 dígitos para cambio rápido
+  rol          Rol      @default(MESERO)
+  activo       Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  pedidos          Pedido[]
+  turnos           Turno[]
+  movimientosCaja  MovimientoCaja[]
+  pedidosRepartidor DireccionDelivery[]
+
+  @@map("usuarios")
+}
+
+// -------------------------------------------------------------
+// 2. CONFIGURACIÓN DEL SISTEMA
+// -------------------------------------------------------------
+
+model Configuracion {
+  id                      String   @id @default(cuid())
+    marcaSistema            String   @default("RestoManager")
+    subtituloSistema        String   @default("POS SYSTEM")
+  nombreRestaurante       String   @default("RestoManager")
+  razonSocial             String?
+  identificacionTributaria String? // NIT, RUT, RFC, etc.
+  telefono                String?
+  email                   String?
+  direccion               String?
+  ciudad                  String?  @default("Bogotá")
+  moneda                  String   @default("COP")
+  simboloMoneda           String   @default("$")
+  porcentajeImpuesto      Decimal  @default(19.00) @db.Decimal(5, 2)
+  aplicarImpuesto         Boolean  @default(true)
+  impuestoIncluido        Boolean  @default(true)
+  propinaSugerida         Decimal  @default(10.00) @db.Decimal(5, 2)
+  habilitarPropina        Boolean  @default(true)
+  mensajeTicket           String?  @default("¡Gracias por su visita!")
+  kdsAlertaAmarillaMinutos Int     @default(10)
+  kdsAlertaRojaMinutos     Int     @default(20)
+  prohibirVentaSinStock    Boolean @default(false)
+  createdAt               DateTime @default(now())
+  updatedAt               DateTime @updatedAt
+
+  @@map("configuracion")
+}
+
+// -------------------------------------------------------------
+// 3. OPERACIÓN DE SALAS Y MESAS
+// -------------------------------------------------------------
+
+model Sala {
+  id        String   @id @default(cuid())
+  nombre    String
+  orden     Int      @default(0)
+  activa    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  mesas Mesa[]
+
+  @@map("salas")
+}
+
+model Mesa {
+  id         String     @id @default(cuid())
+  numero     String     // "1", "2", "T1", "VIP-1"
+  capacidad  Int        @default(4)
+  salaId     String
+  sala       Sala       @relation(fields: [salaId], references: [id], onDelete: Cascade)
+  estado     EstadoMesa @default(DISPONIBLE)
+  posX       Int        @default(0)
+  posY       Int        @default(0)
+  createdAt  DateTime   @default(now())
+  updatedAt  DateTime   @updatedAt
+
+  pedidos       Pedido[]
+  reservaciones Reservacion[]
+
+  @@unique([salaId, numero])
+  @@map("mesas")
+}
+
+// -------------------------------------------------------------
+// 4. CATÁLOGO DE MENÚ Y MODIFICADORES
+// -------------------------------------------------------------
+
+model CategoriaMenu {
+  id        String   @id @default(cuid())
+  nombre    String
+  icono     String?
+  orden     Int      @default(0)
+  activa    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  subcategorias SubcategoriaMenu[]
+  platillos     Platillo[]
+
+  @@map("categorias_menu")
+}
+
+model SubcategoriaMenu {
+  id          String        @id @default(cuid())
+  nombre      String
+  orden       Int           @default(0)
+  activa      Boolean       @default(true)
+  categoriaId String
+  categoria   CategoriaMenu @relation(fields: [categoriaId], references: [id], onDelete: Cascade)
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  platillos Platillo[]
+
+  @@map("subcategorias_menu")
+}
+
+model Platillo {
+  id             String            @id @default(cuid())
+  nombre         String
+  descripcion    String?
+  precio         Decimal           @db.Decimal(10, 2)
+  costo          Decimal           @default(0.00) @db.Decimal(10, 2)
+  imagenUrl      String?
+  disponible     Boolean           @default(true)
+  favorito       Boolean           @default(false)
+  orden          Int               @default(0)
+  categoriaId    String
+  categoria      CategoriaMenu     @relation(fields: [categoriaId], references: [id], onDelete: Cascade)
+  subcategoriaId String?
+  subcategoria   SubcategoriaMenu? @relation(fields: [subcategoriaId], references: [id], onDelete: SetNull)
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+
+  gruposModificador GrupoModificador[]
+  recetas           RecetaIngrediente[]
+  detallesPedido    DetallePedido[]
+
+  @@map("platillos")
+}
+
+model GrupoModificador {
+  id         String   @id @default(cuid())
+  platilloId String
+  platillo   Platillo @relation(fields: [platilloId], references: [id], onDelete: Cascade)
+  nombre     String   // e.g. "Término de la carne", "Salsas"
+  requerido  Boolean  @default(false)
+  minimo     Int      @default(0)
+  maximo     Int      @default(1)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  opciones OpcionModificador[]
+
+  @@map("grupos_modificador")
+}
+
+model OpcionModificador {
+  id          String           @id @default(cuid())
+  grupoId     String
+  grupo       GrupoModificador @relation(fields: [grupoId], references: [id], onDelete: Cascade)
+  nombre      String           // e.g. "Término Medio", "Salsa BBQ"
+  precioExtra Decimal          @default(0.00) @db.Decimal(10, 2)
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  detallesModificador ModificadorDetalle[]
+
+  @@map("opciones_modificador")
+}
+
+// -------------------------------------------------------------
+// 5. INVENTARIO Y RECETAS
+// -------------------------------------------------------------
+
+model Ingrediente {
+  id            String   @id @default(cuid())
+  nombre        String
+  sku           String?  @unique
+  unidadMedida  String   // "kg", "g", "lt", "ml", "unidad"
+  stockActual   Decimal  @default(0.000) @db.Decimal(10, 3)
+  stockMinimo   Decimal  @default(0.000) @db.Decimal(10, 3)
+  costoUnitario Decimal  @default(0.00) @db.Decimal(10, 2)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  recetas     RecetaIngrediente[]
+  movimientos MovimientoInventario[]
+
+  @@map("ingredientes")
+}
+
+model RecetaIngrediente {
+  id            String      @id @default(cuid())
+  platilloId    String
+  platillo      Platillo    @relation(fields: [platilloId], references: [id], onDelete: Cascade)
+  ingredienteId String
+  ingrediente   Ingrediente @relation(fields: [ingredienteId], references: [id], onDelete: Cascade)
+  cantidad      Decimal     @db.Decimal(10, 3)
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  @@unique([platilloId, ingredienteId])
+  @@map("recetas_ingredientes")
+}
+
+model MovimientoInventario {
+  id            String                   @id @default(cuid())
+  ingredienteId String
+  ingrediente   Ingrediente              @relation(fields: [ingredienteId], references: [id], onDelete: Cascade)
+  tipo          TipoMovimientoInventario
+  cantidad      Decimal                  @db.Decimal(10, 3)
+  costoTotal    Decimal                  @default(0.00) @db.Decimal(10, 2)
+  motivo        String?
+  stockAntes    Decimal                  @default(0.000) @db.Decimal(10, 3)
+  stockDespues  Decimal                  @default(0.000) @db.Decimal(10, 3)
+  pedidoId      String?
+  createdAt     DateTime                 @default(now())
+
+  @@map("movimientos_inventario")
+}
+
+// -------------------------------------------------------------
+// 6. PEDIDOS, DETALLES Y PAGOS
+// -------------------------------------------------------------
+
+model Pedido {
+  id           String       @id @default(cuid())
+  codigo       Int          @default(autoincrement()) // Número visible de comanda
+  tipo         TipoPedido   @default(EN_MESA)
+  estado       EstadoPedido @default(ABIERTO)
+  mesaId       String?
+  mesa         Mesa?        @relation(fields: [mesaId], references: [id], onDelete: SetNull)
+  usuarioId    String?      // Mesero o cajero que atendió
+  usuario      Usuario?     @relation(fields: [usuarioId], references: [id], onDelete: SetNull)
+  clienteId    String?
+  cliente      Cliente?     @relation(fields: [clienteId], references: [id], onDelete: SetNull)
+  comensales   Int          @default(1)
+  subtotal     Decimal      @default(0.00) @db.Decimal(10, 2)
+  descuento    Decimal      @default(0.00) @db.Decimal(10, 2)
+  impuesto     Decimal      @default(0.00) @db.Decimal(10, 2)
+  propina      Decimal      @default(0.00) @db.Decimal(10, 2)
+  total        Decimal      @default(0.00) @db.Decimal(10, 2)
+  notas        String?
+  origenOnline Boolean      @default(false)
+  tokenSeguimiento String?   @unique
+  inventarioDescontadoAt DateTime?
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  detalles  DetallePedido[]
+  pagos     Pago[]
+  delivery  DireccionDelivery?
+
+  @@index([estado, createdAt])
+  @@map("pedidos")
+}
+
+model DetallePedido {
+  id             String     @id @default(cuid())
+  pedidoId       String
+  pedido         Pedido     @relation(fields: [pedidoId], references: [id], onDelete: Cascade)
+  platilloId     String
+  platillo       Platillo   @relation(fields: [platilloId], references: [id])
+  cantidad       Int        @default(1)
+  precioUnitario Decimal    @db.Decimal(10, 2)
+  subtotal       Decimal    @db.Decimal(10, 2)
+  comensal       Int?       @default(1) // Para división de cuenta
+  estadoItem     EstadoItem @default(EN_COLA)
+  notas          String?
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+
+  modificadores ModificadorDetalle[]
+
+  @@map("detalles_pedido")
+}
+
+model ModificadorDetalle {
+  id              String            @id @default(cuid())
+  detallePedidoId String
+  detallePedido   DetallePedido     @relation(fields: [detallePedidoId], references: [id], onDelete: Cascade)
+  opcionId        String?
+  opcion          OpcionModificador? @relation(fields: [opcionId], references: [id], onDelete: SetNull)
+  nombre          String
+  precioExtra     Decimal           @default(0.00) @db.Decimal(10, 2)
+
+  @@map("modificadores_detalle")
+}
+
+model Pago {
+  id          String     @id @default(cuid())
+  pedidoId    String
+  pedido      Pedido     @relation(fields: [pedidoId], references: [id], onDelete: Cascade)
+  turnoId     String?
+  turno       Turno?     @relation(fields: [turnoId], references: [id], onDelete: SetNull)
+  metodoPago  MetodoPago
+  monto       Decimal    @db.Decimal(10, 2)
+  propina     Decimal    @default(0.00) @db.Decimal(10, 2)
+  comensal    Int?       // null = cuenta completa; número = cierre parcial
+  referencia  String?    // Voucher o referencia de transacción
+  estado      EstadoPago @default(PAGADO)
+  createdAt   DateTime   @default(now())
+
+  @@index([turnoId, createdAt])
+  @@index([pedidoId, comensal])
+  @@map("pagos")
+}
+
+model DireccionDelivery {
+  id           String         @id @default(cuid())
+  pedidoId     String         @unique
+  pedido       Pedido         @relation(fields: [pedidoId], references: [id], onDelete: Cascade)
+  direccion    String
+  telefono     String
+  nombreCliente String?
+  referencia   String?
+  repartidorId String?
+  repartidor   Usuario?       @relation(fields: [repartidorId], references: [id], onDelete: SetNull)
+  costoEnvio   Decimal        @default(0.00) @db.Decimal(10, 2)
+  estado       EstadoDelivery @default(PENDIENTE)
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+
+  @@map("direcciones_delivery")
+}
+
+// -------------------------------------------------------------
+// 7. CAJA, TURNOS Y ARQUEOS
+// -------------------------------------------------------------
+
+model Turno {
+  id           String      @id @default(cuid())
+  usuarioId    String
+  usuario      Usuario     @relation(fields: [usuarioId], references: [id])
+  saldoInicial Decimal     @db.Decimal(10, 2)
+  totalVentas  Decimal     @default(0.00) @db.Decimal(10, 2)
+  saldoFinal   Decimal?    @db.Decimal(10, 2)
+  estado       EstadoTurno @default(ABIERTO)
+  fechaInicio  DateTime    @default(now())
+  fechaFin     DateTime?
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+
+  arqueos      ArqueoCaja[]
+  movimientos  MovimientoCaja[]
+  pagos        Pago[]
+
+  @@map("turnos")
+}
+
+model ArqueoCaja {
+  id            String   @id @default(cuid())
+  turnoId       String
+  turno         Turno    @relation(fields: [turnoId], references: [id], onDelete: Cascade)
+  montoEsperado Decimal  @db.Decimal(10, 2)
+  montoReal     Decimal  @db.Decimal(10, 2)
+  diferencia    Decimal  @db.Decimal(10, 2)
+  ciego         Boolean  @default(false)
+  observaciones String?
+  createdAt     DateTime @default(now())
+
+  @@map("arqueos_caja")
+}
+
+model MovimientoCaja {
+  id        String             @id @default(cuid())
+  turnoId   String
+  turno     Turno              @relation(fields: [turnoId], references: [id], onDelete: Cascade)
+  usuarioId String
+  usuario   Usuario            @relation(fields: [usuarioId], references: [id])
+  tipo      TipoMovimientoCaja
+  monto     Decimal            @db.Decimal(10, 2)
+  concepto  String
+  createdAt DateTime           @default(now())
+
+  @@map("movimientos_caja")
+}
+
+// -------------------------------------------------------------
+// 8. CLIENTES, PROVEEDORES, GASTOS Y RESERVACIONES
+// -------------------------------------------------------------
+
+model Cliente {
+  id                   String   @id @default(cuid())
+  nombre               String
+  email                String?  @unique
+  telefono             String?
+  documento            String?  @unique
+  direccion            String?
+  saldoCuentaCorriente Decimal  @default(0.00) @db.Decimal(10, 2)
+  descuentoFijo        Decimal? @db.Decimal(5, 2) // % de descuento automático
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  pedidos Pedido[]
+  movimientosCuenta MovimientoCuentaCliente[]
+
+  @@map("clientes")
+}
+
+model Proveedor {
+  id                   String   @id @default(cuid())
+  nombre               String
+  contacto             String?
+  telefono             String?
+  email                String?
+  direccion            String?
+  saldoCuentaCorriente Decimal  @default(0.00) @db.Decimal(10, 2)
+  categoria            String?
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  movimientosCuenta MovimientoCuentaProveedor[]
+  gastos             Gasto[]
+
+  @@map("proveedores")
+}
+
+model CategoriaGasto {
+  id        String   @id @default(cuid())
+  nombre    String   @unique
+  gastos    Gasto[]
+  createdAt DateTime @default(now())
+
+  @@map("categorias_gasto")
+}
+
+model Gasto {
+  id               String         @id @default(cuid())
+  categoriaId      String
+  categoria        CategoriaGasto @relation(fields: [categoriaId], references: [id])
+  proveedorId      String?
+  proveedor        Proveedor?     @relation(fields: [proveedorId], references: [id], onDelete: SetNull)
+  descripcion      String
+  monto            Decimal        @db.Decimal(10, 2)
+  fecha            DateTime       @default(now())
+  pagado           Boolean        @default(true)
+  fechaVencimiento DateTime?
+  comprobanteUrl   String?
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+
+  @@map("gastos")
+}
+
+model MovimientoCuentaCliente {
+  id        String               @id @default(cuid())
+  clienteId String
+  cliente   Cliente              @relation(fields: [clienteId], references: [id], onDelete: Cascade)
+  tipo      TipoMovimientoCuenta
+  monto     Decimal              @db.Decimal(10, 2)
+  concepto  String
+  createdAt DateTime             @default(now())
+
+  @@index([clienteId, createdAt])
+  @@map("movimientos_cuenta_clientes")
+}
+
+model MovimientoCuentaProveedor {
+  id          String               @id @default(cuid())
+  proveedorId String
+  proveedor   Proveedor            @relation(fields: [proveedorId], references: [id], onDelete: Cascade)
+  tipo        TipoMovimientoCuenta
+  monto       Decimal              @db.Decimal(10, 2)
+  concepto    String
+  createdAt   DateTime             @default(now())
+
+  @@index([proveedorId, createdAt])
+  @@map("movimientos_cuenta_proveedores")
+}
+
+model Reservacion {
+  id            String   @id @default(cuid())
+  mesaId        String
+  mesa          Mesa     @relation(fields: [mesaId], references: [id], onDelete: Cascade)
+  nombreCliente String
+  telefono      String
+  personas      Int      @default(2)
+  fechaHora     DateTime
+  notas         String?
+  confirmada    Boolean  @default(false)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@map("reservaciones")
+}
